@@ -78,7 +78,7 @@ create table if not exists public.map_features (
   constraint map_features_layer_project_fk
     foreign key (layer_id, project_id)
     references public.map_layers(id, project_id)
-    on delete set null (layer_id)
+    on delete restrict
 );
 
 create table if not exists public.measurements (
@@ -290,6 +290,14 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
+revoke all on function public.create_organization(text, text) from public, anon;
+revoke all on function public.is_org_member(uuid) from public, anon;
+revoke all on function public.has_org_role(uuid, text[]) from public, anon;
+revoke all on function public.is_project_member(uuid) from public, anon;
+revoke all on function public.can_access_project(uuid) from public, anon;
+revoke all on function public.can_edit_project(uuid) from public, anon;
+revoke all on function public.can_manage_project(uuid) from public, anon;
+
 grant execute on function public.create_organization(text, text) to authenticated;
 grant execute on function public.is_org_member(uuid) to authenticated;
 grant execute on function public.has_org_role(uuid, text[]) to authenticated;
@@ -371,6 +379,12 @@ for insert to authenticated with check (
     where p.id = project_id
       and public.has_org_role(p.organization_id, array['owner','admin']::text[])
   ))
+);
+create policy "project_members_update_managers" on public.project_members
+for update to authenticated using (
+  public.can_manage_project(project_id) and role <> 'manager'
+) with check (
+  public.can_manage_project(project_id) and role <> 'manager'
 );
 create policy "project_members_delete_managers" on public.project_members
 for delete to authenticated using (

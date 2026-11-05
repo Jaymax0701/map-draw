@@ -21,13 +21,28 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and configure the Supabase project before enabling backend features.
+Copy `.env.example` to `.env.local` and configure:
+
+```env
+VITE_SUPABASE_URL=your_project_url
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+```
+
+The app also supports the legacy `VITE_SUPABASE_ANON_KEY` variable as a fallback. Never put a Supabase secret or service-role key in a Vite environment variable.
 
 ## Security principles
 - Organisation and project access must be enforced by PostgreSQL Row Level Security.
-- Never expose Supabase service-role credentials in the browser.
+- Never expose Supabase secret/service-role credentials in the browser.
 - Keep uploaded project documents in private storage buckets.
 - Do not store confidential production data until access policies and deployment controls have been reviewed.
 
 ## License
 To be determined.
+
+## Basemap note
+
+The current development preview uses OpenStreetMap's public raster tile endpoint for demonstration. That public endpoint is not a production tile hosting service and must not be treated as one. Before public or commercial deployment, select a tile provider or self-hosted service, review its attribution, licensing, caching and usage terms, and configure the MapLibre style accordingly.
+
+## Current scope
+
+The current UI is an early workspace shell. Drawing, measurement persistence, authentication screens, organisation/project management and production basemap configuration are not yet implemented. Do not enter sensitive or operational data in this preview.

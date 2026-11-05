@@ -61,19 +61,24 @@ create table if not exists public.map_layers (
   sort_order integer not null default 0,
   created_by uuid not null references auth.users(id),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (id, project_id)
 );
 
 create table if not exists public.map_features (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
-  layer_id uuid references public.map_layers(id) on delete set null,
+  layer_id uuid,
   name text,
   properties jsonb not null default '{}'::jsonb,
   geom extensions.geometry(Geometry, 4326) not null,
   created_by uuid not null references auth.users(id),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint map_features_layer_project_fk
+    foreign key (layer_id, project_id)
+    references public.map_layers(id, project_id)
+    on delete set null (layer_id)
 );
 
 create table if not exists public.measurements (
@@ -433,14 +438,8 @@ for select to authenticated using (
   (project_id is not null and public.can_access_project(project_id))
   or (organization_id is not null and public.is_org_member(organization_id))
 );
-create policy "activity_logs_insert_scoped" on public.activity_logs
-for insert to authenticated with check (
-  actor_id = (select auth.uid())
-  and (
-    (project_id is not null and public.can_access_project(project_id))
-    or (organization_id is not null and public.is_org_member(organization_id))
-  )
-);
+-- Activity log writes are intentionally not granted to browser clients.
+-- Add trusted database triggers or server-side writes for audit events.
 
 -- Private document storage bucket. Object paths must begin with the project UUID.
 insert into storage.buckets(id, name, public)
@@ -450,12 +449,12 @@ on conflict (id) do nothing;
 create policy "project_documents_read" on storage.objects
 for select to authenticated using (
   bucket_id = 'project-documents'
-  and public.can_access_project(((storage.foldername(name))[1])::uuid)
+  and public.can_edit_project(((storage.foldername(name))[1])::uuid)
 );
 create policy "project_documents_upload" on storage.objects
 for insert to authenticated with check (
   bucket_id = 'project-documents'
-  and public.can_access_project(((storage.foldername(name))[1])::uuid)
+  and public.can_edit_project(((storage.foldername(name))[1])::uuid)
 );
 create policy "project_documents_delete" on storage.objects
 for delete to authenticated using (

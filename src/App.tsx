@@ -30,8 +30,8 @@ export default function App() {
 
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      center: [103.5, 3.5],
-      zoom: 4.2,
+      center: [0, 20],
+      zoom: 1.7,
       minZoom: 2,
       maxZoom: 19,
       attributionControl: false,

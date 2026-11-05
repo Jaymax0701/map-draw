@@ -449,7 +449,7 @@ on conflict (id) do nothing;
 create policy "project_documents_read" on storage.objects
 for select to authenticated using (
   bucket_id = 'project-documents'
-  and public.can_edit_project(((storage.foldername(name))[1])::uuid)
+  and public.can_access_project(((storage.foldername(name))[1])::uuid)
 );
 create policy "project_documents_upload" on storage.objects
 for insert to authenticated with check (
@@ -459,5 +459,5 @@ for insert to authenticated with check (
 create policy "project_documents_delete" on storage.objects
 for delete to authenticated using (
   bucket_id = 'project-documents'
-  and public.can_access_project(((storage.foldername(name))[1])::uuid)
+  and public.can_edit_project(((storage.foldername(name))[1])::uuid)
 );

@@ -178,7 +178,7 @@ create or replace function public.can_access_project(p_project_id uuid)
 returns boolean
 language sql stable security definer
 set search_path = public
-as $$
+as $
   select exists (
     select 1
     from public.projects p
@@ -188,7 +188,49 @@ as $$
         or public.is_project_member(p.id)
       )
   );
-$$;
+$;
+
+create or replace function public.can_edit_project(p_project_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $
+  select exists (
+    select 1
+    from public.projects p
+    where p.id = p_project_id
+      and (
+        public.has_org_role(p.organization_id, array['owner','admin']::text[])
+        or exists (
+          select 1 from public.project_members pm
+          where pm.project_id = p.id
+            and pm.user_id = (select auth.uid())
+            and pm.role in ('manager','gis_editor','editor')
+        )
+      )
+  );
+$;
+
+create or replace function public.can_manage_project(p_project_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $
+  select exists (
+    select 1
+    from public.projects p
+    where p.id = p_project_id
+      and (
+        public.has_org_role(p.organization_id, array['owner','admin']::text[])
+        or exists (
+          select 1 from public.project_members pm
+          where pm.project_id = p.id
+            and pm.user_id = (select auth.uid())
+            and pm.role = 'manager'
+        )
+      )
+  );
+$;
 
 -- Create an organisation and its first owner atomically.
 create or replace function public.create_organization(p_name text, p_slug text)
@@ -248,6 +290,8 @@ grant execute on function public.is_org_member(uuid) to authenticated;
 grant execute on function public.has_org_role(uuid, text[]) to authenticated;
 grant execute on function public.is_project_member(uuid) to authenticated;
 grant execute on function public.can_access_project(uuid) to authenticated;
+grant execute on function public.can_edit_project(uuid) to authenticated;
+grant execute on function public.can_manage_project(uuid) to authenticated;
 
 alter table public.profiles enable row level security;
 alter table public.organizations enable row level security;
@@ -316,53 +360,73 @@ for select to authenticated using (
 );
 create policy "project_members_insert_managers" on public.project_members
 for insert to authenticated with check (
-  exists (
+  public.can_manage_project(project_id)
+  and (role <> 'manager' or exists (
     select 1 from public.projects p
     where p.id = project_id
-      and (
-        public.has_org_role(p.organization_id, array['owner','admin']::text[])
-        or exists (
-          select 1 from public.project_members pm
-          where pm.project_id = p.id and pm.user_id = (select auth.uid()) and pm.role = 'manager'
-        )
-      )
-    )
+      and public.has_org_role(p.organization_id, array['owner','admin']::text[])
+  ))
 );
 create policy "project_members_delete_managers" on public.project_members
 for delete to authenticated using (
-  exists (
+  public.can_manage_project(project_id)
+  and (role <> 'manager' or exists (
     select 1 from public.projects p
     where p.id = project_id
-      and (
-        public.has_org_role(p.organization_id, array['owner','admin']::text[])
-        or exists (
-          select 1 from public.project_members pm
-          where pm.project_id = p.id and pm.user_id = (select auth.uid()) and pm.role = 'manager'
-        )
-      )
-    ) and role <> 'manager'
+      and public.has_org_role(p.organization_id, array['owner','admin']::text[])
+  ))
 );
 
 -- Project-scoped data: organisation admins/owners and explicit project members only.
-create policy "map_layers_project_access" on public.map_layers
-for all to authenticated using (public.can_access_project(project_id))
-with check (public.can_access_project(project_id) and created_by = (select auth.uid()));
+create policy "map_layers_project_read" on public.map_layers
+for select to authenticated using (public.can_access_project(project_id));
+create policy "map_layers_project_insert" on public.map_layers
+for insert to authenticated with check (public.can_edit_project(project_id) and created_by = (select auth.uid()));
+create policy "map_layers_project_update" on public.map_layers
+for update to authenticated using (public.can_edit_project(project_id))
+with check (public.can_edit_project(project_id));
+create policy "map_layers_project_delete" on public.map_layers
+for delete to authenticated using (public.can_edit_project(project_id));
 
-create policy "map_features_project_access" on public.map_features
-for all to authenticated using (public.can_access_project(project_id))
-with check (public.can_access_project(project_id) and created_by = (select auth.uid()));
+create policy "map_features_project_read" on public.map_features
+for select to authenticated using (public.can_access_project(project_id));
+create policy "map_features_project_insert" on public.map_features
+for insert to authenticated with check (public.can_edit_project(project_id) and created_by = (select auth.uid()));
+create policy "map_features_project_update" on public.map_features
+for update to authenticated using (public.can_edit_project(project_id))
+with check (public.can_edit_project(project_id));
+create policy "map_features_project_delete" on public.map_features
+for delete to authenticated using (public.can_edit_project(project_id));
 
-create policy "measurements_project_access" on public.measurements
-for all to authenticated using (public.can_access_project(project_id))
-with check (public.can_access_project(project_id) and created_by = (select auth.uid()));
+create policy "measurements_project_read" on public.measurements
+for select to authenticated using (public.can_access_project(project_id));
+create policy "measurements_project_insert" on public.measurements
+for insert to authenticated with check (public.can_edit_project(project_id) and created_by = (select auth.uid()));
+create policy "measurements_project_update" on public.measurements
+for update to authenticated using (public.can_edit_project(project_id))
+with check (public.can_edit_project(project_id));
+create policy "measurements_project_delete" on public.measurements
+for delete to authenticated using (public.can_edit_project(project_id));
 
-create policy "documents_project_access" on public.documents
-for all to authenticated using (public.can_access_project(project_id))
-with check (public.can_access_project(project_id) and uploaded_by = (select auth.uid()));
+create policy "documents_project_read" on public.documents
+for select to authenticated using (public.can_access_project(project_id));
+create policy "documents_project_insert" on public.documents
+for insert to authenticated with check (public.can_edit_project(project_id) and uploaded_by = (select auth.uid()));
+create policy "documents_project_update" on public.documents
+for update to authenticated using (public.can_edit_project(project_id))
+with check (public.can_edit_project(project_id));
+create policy "documents_project_delete" on public.documents
+for delete to authenticated using (public.can_edit_project(project_id));
 
-create policy "tasks_project_access" on public.tasks
-for all to authenticated using (public.can_access_project(project_id))
-with check (public.can_access_project(project_id) and created_by = (select auth.uid()));
+create policy "tasks_project_read" on public.tasks
+for select to authenticated using (public.can_access_project(project_id));
+create policy "tasks_project_insert" on public.tasks
+for insert to authenticated with check (public.can_edit_project(project_id) and created_by = (select auth.uid()));
+create policy "tasks_project_update" on public.tasks
+for update to authenticated using (public.can_edit_project(project_id))
+with check (public.can_edit_project(project_id));
+create policy "tasks_project_delete" on public.tasks
+for delete to authenticated using (public.can_edit_project(project_id));
 
 create policy "activity_logs_select_scoped" on public.activity_logs
 for select to authenticated using (
